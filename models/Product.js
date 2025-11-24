@@ -3,21 +3,21 @@ import mongoose from 'mongoose';
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
+    required: [true, 'Product name is required'],
     trim: true,
   },
   description: {
     type: String,
-    required: true,
+    required: [true, 'Product description is required'],
   },
   price: {
     type: Number,
-    required: true,
-    min: 0,
+    required: [true, 'Product price is required'],
+    min: [0, 'Price cannot be negative'],
   },
   category: {
     type: String,
-    required: true,
+    required: [true, 'Category is required'],
   },
   images: [{
     url: {
@@ -36,7 +36,7 @@ const productSchema = new mongoose.Schema({
   stock: {
     type: Number,
     default: 0,
-    min: 0,
+    min: [0, 'Stock cannot be negative'],
   },
   featured: {
     type: Boolean,
@@ -46,46 +46,54 @@ const productSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  hasSizes: {
+    type: Boolean,
+    default: false,
+  },
+  sizes: [{
+    size: {
+      type: String,
+      required: true,
+    },
+    stock: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    priceAdjustment: {
+      type: Number,
+      default: 0,
+    },
+    sku: {
+      type: String,
+      trim: true,
+    },
+    active: {
+      type: Boolean,
+      default: true,
+    }
+  }],
+  createdBy: {
+    type: String,
+    default: 'admin'
+  }
 }, {
   timestamps: true,
 });
 
-// Pre-save middleware to ensure consistent image format
-productSchema.pre('save', function(next) {
-  // Ensure images array has proper structure
-  if (this.images && this.images.length > 0) {
-    this.images = this.images.map((img, index) => {
-      // If image is a string, convert to object format
-      if (typeof img === 'string') {
-        return {
-          url: img,
-          alt: this.name,
-          isPrimary: index === 0,
-        };
-      }
-      
-      // If image is already an object, ensure it has all required fields
-      return {
-        url: img.url || '',
-        alt: img.alt || this.name,
-        isPrimary: img.isPrimary !== undefined ? img.isPrimary : index === 0,
-      };
-    }).filter(img => img.url && img.url.trim() !== ''); // Remove empty images
-    
-    // Ensure at least one image is marked as primary
-    const hasPrimary = this.images.some(img => img.isPrimary);
-    if (!hasPrimary && this.images.length > 0) {
-      this.images[0].isPrimary = true;
-    }
-  } else {
-    // If no images, set a default placeholder
-    this.images = [{
-      url: '/placeholder-image.jpg',
-      alt: this.name,
-      isPrimary: true,
-    }];
+// Remove problematic pre-save middleware for now
+// We'll handle the data normalization in the API instead
+
+// Virtual for total stock
+productSchema.virtual('totalStock').get(function() {
+  if (this.hasSizes && this.sizes.length > 0) {
+    return this.sizes.reduce((total, size) => total + (size.stock || 0), 0);
   }
-  next();
+  return this.stock;
 });
+
+// Include virtuals in JSON output
+productSchema.set('toJSON', { virtuals: true });
+productSchema.set('toObject', { virtuals: true });
 
 export default mongoose.models.Product || mongoose.model('Product', productSchema);

@@ -40,13 +40,14 @@ import {
   CloudUpload,
   Category,
   Check,
-  Close
+  Close,
+  Add
 } from '@mui/icons-material';
 import { useRouter } from 'next/router';
 import Layout from '../../../components/Layout/Layout';
 import toast from 'react-hot-toast';
 
-const steps = ['Basic Information', 'Images & Media', 'Pricing & Inventory', 'Review & Publish'];
+const steps = ['Basic Information', 'Sizes & Variations', 'Images & Media', 'Pricing & Inventory', 'Review & Publish'];
 
 export default function NewProduct() {
   const [activeStep, setActiveStep] = useState(0);
@@ -60,6 +61,8 @@ export default function NewProduct() {
     featured: false,
     active: true,
     images: [],
+    hasSizes: false,
+    sizes: [],
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -130,8 +133,8 @@ export default function NewProduct() {
       return {
         file,
         url: objectUrl,
-        alt: `Product image ${index + 1}`,
-        isPrimary: index === 0 && formData.images.length === 0,
+        alt: `Product image ${formData.images.length + index + 1}`,
+        isPrimary: formData.images.length === 0 && index === 0,
         isNew: true,
       };
     });
@@ -209,15 +212,67 @@ export default function NewProduct() {
         if (!formData.category) newErrors.category = 'Category is required';
         break;
 
-      case 1: // Images
+      case 1: // Sizes - Only validate size names, not stock
+        if (formData.hasSizes && formData.sizes.length === 0) {
+          newErrors.sizes = 'Please add at least one size variation';
+        }
+        if (formData.hasSizes && formData.sizes.some(size => !size.size.trim())) {
+          newErrors.sizes = 'All sizes must have a size name';
+        }
+        break;
+
+      case 2: // Images
         if (formData.images.length === 0) {
           newErrors.images = 'At least one image is required';
         }
         break;
 
-      case 2: // Pricing & Inventory
+      case 3: // Pricing & Inventory - Validate price and inventory separately
         if (!formData.price || parseFloat(formData.price) <= 0) newErrors.price = 'Valid price is required';
-        if (!formData.stock || parseInt(formData.stock) < 0) newErrors.stock = 'Valid stock quantity is required';
+        
+        // Validate inventory based on whether sizes are enabled
+        if (!formData.hasSizes) {
+          // For products without sizes, validate main stock
+          if (!formData.stock || parseInt(formData.stock) < 0) {
+            newErrors.stock = 'Valid stock quantity is required';
+          }
+        } else {
+          // For products with sizes, validate size stocks
+          const invalidSizes = formData.sizes.filter(size => {
+            const stockValue = parseInt(size.stock);
+            return isNaN(stockValue) || stockValue < 0;
+          });
+          
+          if (invalidSizes.length > 0) {
+            newErrors.sizes = 'All sizes must have valid stock quantities (0 or higher)';
+          }
+        }
+        break;
+
+      case 4: // Review & Publish - Validate all critical fields
+        if (!formData.name.trim()) newErrors.name = 'Product name is required';
+        if (!formData.description.trim()) newErrors.description = 'Description is required';
+        if (!formData.category) newErrors.category = 'Category is required';
+        if (formData.images.length === 0) newErrors.images = 'At least one image is required';
+        if (!formData.price || parseFloat(formData.price) <= 0) newErrors.price = 'Valid price is required';
+        
+        // Validate inventory based on whether sizes are enabled
+        if (!formData.hasSizes) {
+          if (!formData.stock || parseInt(formData.stock) < 0) {
+            newErrors.stock = 'Valid stock quantity is required';
+          }
+        } else {
+          if (formData.sizes.length === 0) {
+            newErrors.sizes = 'Please add at least one size variation';
+          } else {
+            const invalidSizes = formData.sizes.filter(size => 
+              !size.size.trim() || isNaN(parseInt(size.stock)) || parseInt(size.stock) < 0
+            );
+            if (invalidSizes.length > 0) {
+              newErrors.sizes = 'All sizes must have valid names and stock quantities';
+            }
+          }
+        }
         break;
     }
 
@@ -235,85 +290,153 @@ export default function NewProduct() {
     setActiveStep((prev) => prev - 1);
   };
 
-  const uploadImagesToServer = async (images) => {
-    const uploadedImages = [];
-    
-    for (const image of images) {
-      if (image.isNew && image.file) {
-        // For local files, you would typically upload to a server
-        // For now, we'll convert to base64 (not recommended for production)
+ const uploadImagesToServer = async (images) => {
+  const uploadedImages = [];
+  
+  for (const image of images) {
+    if (image.isNew && image.file) {
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('image', image.file);
+      
+      try {
+        const token = localStorage.getItem('token');
+        const uploadResponse = await fetch('/api/admin/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        });
+        
+        if (uploadResponse.ok) {
+          const uploadData = await uploadResponse.json();
+          uploadedImages.push({
+            url: uploadData.url, // URL from server
+            alt: image.alt,
+            isPrimary: image.isPrimary,
+          });
+        } else {
+          console.error('Image upload failed:', uploadResponse.status);
+          // Fallback to base64 for now
+          const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(image.file);
+            reader.onload = () => resolve(reader.result);
+          });
+          uploadedImages.push({
+            url: base64,
+            alt: image.alt,
+            isPrimary: image.isPrimary,
+          });
+        }
+      } catch (error) {
+        console.error('Image upload error:', error);
+        // Fallback to base64
         const base64 = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.readAsDataURL(image.file);
           reader.onload = () => resolve(reader.result);
         });
-        
         uploadedImages.push({
           url: base64,
           alt: image.alt,
           isPrimary: image.isPrimary,
         });
-        
-        // Revoke the object URL
-        URL.revokeObjectURL(image.url);
-      } else {
-        // For URL images, just use as is
-        uploadedImages.push({
-          url: image.url,
-          alt: image.alt,
-          isPrimary: image.isPrimary,
-        });
       }
+      
+      // Revoke the object URL
+      URL.revokeObjectURL(image.url);
+    } else {
+      // For URL images, just use as is
+      uploadedImages.push({
+        url: image.url,
+        alt: image.alt,
+        isPrimary: image.isPrimary,
+      });
     }
-    
-    return uploadedImages;
-  };
+  }
+  
+  return uploadedImages;
+};
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateStep(activeStep)) {
-      toast.error('Please fix the form errors');
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!validateStep(activeStep)) {
+    toast.error('Please fix the form errors before submitting');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      toast.error('Authentication required. Please log in again.');
       return;
     }
+    
+    console.log('Starting product creation...');
+    
+    // Upload images first
+    console.log('Starting image upload...');
+    const uploadedImages = await uploadImagesToServer(formData.images);
+    console.log('Images uploaded:', uploadedImages.length);
 
-    setLoading(true);
+    // Prepare the data to send
+    const submitData = {
+      name: formData.name.trim(),
+      description: formData.description.trim(),
+      price: parseFloat(formData.price),
+      category: formData.category,
+      stock: formData.hasSizes ? 0 : parseInt(formData.stock) || 0, // Set to 0 for sized products
+      featured: Boolean(formData.featured),
+      active: Boolean(formData.active),
+      images: uploadedImages,
+      hasSizes: Boolean(formData.hasSizes),
+      sizes: formData.hasSizes ? formData.sizes.map(size => ({
+        size: size.size.trim(),
+        stock: parseInt(size.stock) || 0,
+        priceAdjustment: parseFloat(size.priceAdjustment) || 0,
+        sku: size.sku?.trim() || ''
+      })) : [],
+    };
 
-    try {
-      const token = localStorage.getItem('token');
-      
-      // Upload images first
-      const uploadedImages = await uploadImagesToServer(formData.images);
+    console.log('Submitting data:', submitData);
 
-      const response = await fetch('/api/admin/products', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          ...formData,
-          price: parseFloat(formData.price),
-          stock: parseInt(formData.stock),
-          images: uploadedImages,
-        }),
-      });
+    const response = await fetch('/api/admin/products', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(submitData),
+    });
 
-      const data = await response.json();
+    console.log('Response status:', response.status);
+    
+    const data = await response.json();
+    console.log('Response data:', data);
 
-      if (response.ok) {
-        toast.success('Product created successfully!');
+    if (response.ok) {
+      toast.success('Product created successfully!');
+      setActiveStep(steps.length); // Mark as completed
+      setTimeout(() => {
         router.push('/admin/products');
-      } else {
-        toast.error(data.message || 'Failed to create product');
-      }
-    } catch (error) {
-      toast.error('An error occurred while creating product');
-    } finally {
-      setLoading(false);
+      }, 2000);
+    } else {
+      const errorMessage = data.message || data.errors?.[0] || `Failed to create product: ${response.status}`;
+      toast.error(errorMessage);
+      console.error('Server error:', data);
     }
-  };
-
+  } catch (error) {
+    toast.error('Network error occurred while creating product');
+    console.error('Network error:', error);
+  } finally {
+    setLoading(false);
+  }
+};
   const getStepContent = (step) => {
     switch (step) {
       case 0:
@@ -336,7 +459,7 @@ export default function NewProduct() {
               <FormControl 
                 fullWidth 
                 error={!!errors.category}
-                sx={{ minWidth: 250 }} // Set minimum width for dropdown
+                sx={{ minWidth: 250 }}
               >
                 <InputLabel>Category *</InputLabel>
                 <Select
@@ -389,6 +512,140 @@ export default function NewProduct() {
         );
 
       case 1:
+        return (
+          <Box>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Configure product sizes and variations. Enable sizes if your product comes in different sizes.
+              Each size can have its own stock level and price adjustment.
+            </Alert>
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  name="hasSizes"
+                  checked={formData.hasSizes}
+                  onChange={(e) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      hasSizes: e.target.checked,
+                      sizes: e.target.checked ? [{ size: '', stock: '', priceAdjustment: '', sku: '' }] : []
+                    }));
+                  }}
+                />
+              }
+              label="This product has different sizes/variations"
+            />
+
+            {formData.hasSizes && (
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="h6" gutterBottom>
+                  Size Configuration
+                </Typography>
+                
+                {formData.sizes.map((size, index) => (
+                  <Paper key={index} sx={{ p: 2, mb: 2 }}>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} sm={3}>
+                        <TextField
+                          fullWidth
+                          label="Size"
+                          value={size.size}
+                          onChange={(e) => {
+                            const newSizes = [...formData.sizes];
+                            newSizes[index].size = e.target.value;
+                            setFormData(prev => ({ ...prev, sizes: newSizes }));
+                          }}
+                          placeholder="e.g., S, M, L, XL"
+                          required
+                          error={!!errors.sizes && !size.size.trim()}
+                        />
+                      </Grid>
+                      
+                      <Grid item xs={12} sm={2}>
+                        <TextField
+                          fullWidth
+                          label="Stock"
+                          type="number"
+                          value={size.stock}
+                          onChange={(e) => {
+                            const newSizes = [...formData.sizes];
+                            newSizes[index].stock = e.target.value;
+                            setFormData(prev => ({ ...prev, sizes: newSizes }));
+                          }}
+                          inputProps={{ min: 0 }}
+                        />
+                      </Grid>
+                      
+                      <Grid item xs={12} sm={3}>
+                        <TextField
+                          fullWidth
+                          label="Price Adjustment (£)"
+                          type="number"
+                          value={size.priceAdjustment}
+                          onChange={(e) => {
+                            const newSizes = [...formData.sizes];
+                            newSizes[index].priceAdjustment = e.target.value;
+                            setFormData(prev => ({ ...prev, sizes: newSizes }));
+                          }}
+                          inputProps={{ step: "0.01" }}
+                          helperText="+ for increase, - for decrease"
+                        />
+                      </Grid>
+                      
+                      <Grid item xs={12} sm={3}>
+                        <TextField
+                          fullWidth
+                          label="SKU"
+                          value={size.sku}
+                          onChange={(e) => {
+                            const newSizes = [...formData.sizes];
+                            newSizes[index].sku = e.target.value;
+                            setFormData(prev => ({ ...prev, sizes: newSizes }));
+                          }}
+                          placeholder="Auto-generated if empty"
+                        />
+                      </Grid>
+                      
+                      <Grid item xs={12} sm={1}>
+                        <IconButton
+                          color="error"
+                          onClick={() => {
+                            const newSizes = formData.sizes.filter((_, i) => i !== index);
+                            setFormData(prev => ({ ...prev, sizes: newSizes }));
+                          }}
+                          disabled={formData.sizes.length === 1}
+                        >
+                          <Delete />
+                        </IconButton>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                ))}
+                
+                <Button
+                  variant="outlined"
+                  startIcon={<Add />}
+                  onClick={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      sizes: [...prev.sizes, { size: '', stock: '', priceAdjustment: '', sku: '' }]
+                    }));
+                  }}
+                >
+                  Add Another Size
+                </Button>
+
+                {errors.sizes && (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    {errors.sizes}
+                  </Alert>
+                )}
+              </Box>
+            )}
+          </Box>
+        );
+
+      case 2:
         return (
           <Box>
             <Alert severity="info" sx={{ mb: 3 }}>
@@ -540,38 +797,62 @@ export default function NewProduct() {
           </Box>
         );
 
-      case 2:
+      case 3:
         return (
           <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Price (£)"
-                name="price"
-                type="number"
-                value={formData.price}
-                onChange={handleChange}
-                inputProps={{ step: "0.01", min: "0" }}
-                error={!!errors.price}
-                helperText={errors.price}
-                required
-              />
-            </Grid>
+            {!formData.hasSizes && (
+              <>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Price (£)"
+                    name="price"
+                    type="number"
+                    value={formData.price}
+                    onChange={handleChange}
+                    inputProps={{ step: "0.01", min: "0" }}
+                    error={!!errors.price}
+                    helperText={errors.price}
+                    required
+                  />
+                </Grid>
 
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Stock Quantity"
-                name="stock"
-                type="number"
-                value={formData.stock}
-                onChange={handleChange}
-                inputProps={{ min: "0" }}
-                error={!!errors.stock}
-                helperText={errors.stock}
-                required
-              />
-            </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Stock Quantity"
+                    name="stock"
+                    type="number"
+                    value={formData.stock}
+                    onChange={handleChange}
+                    inputProps={{ min: "0" }}
+                    error={!!errors.stock}
+                    helperText={errors.stock}
+                    required
+                  />
+                </Grid>
+              </>
+            )}
+
+            {formData.hasSizes && (
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Base price: £{formData.price || '0.00'}. Individual size pricing is calculated as base price + price adjustment.
+                </Alert>
+                <TextField
+                  fullWidth
+                  label="Base Price (£)"
+                  name="price"
+                  type="number"
+                  value={formData.price}
+                  onChange={handleChange}
+                  inputProps={{ step: "0.01", min: "0" }}
+                  error={!!errors.price}
+                  helperText={errors.price}
+                  required
+                />
+              </Grid>
+            )}
 
             <Grid item xs={12}>
               <FormControlLabel
@@ -598,10 +879,18 @@ export default function NewProduct() {
                 label="Publish product immediately"
               />
             </Grid>
+
+            {errors.sizes && (
+              <Grid item xs={12}>
+                <Alert severity="error">
+                  {errors.sizes}
+                </Alert>
+              </Grid>
+            )}
           </Grid>
         );
 
-      case 3:
+      case 4:
         return (
           <Box>
             <Typography variant="h6" gutterBottom>
@@ -628,13 +917,45 @@ export default function NewProduct() {
                     <Typography variant="subtitle1" gutterBottom>
                       Pricing & Inventory
                     </Typography>
-                    <Typography><strong>Price:</strong> £{formData.price}</Typography>
-                    <Typography><strong>Stock:</strong> {formData.stock} units</Typography>
+                    <Typography><strong>Base Price:</strong> £{formData.price}</Typography>
+                    {!formData.hasSizes && (
+                      <Typography><strong>Stock:</strong> {formData.stock} units</Typography>
+                    )}
+                    {formData.hasSizes && (
+                      <Typography><strong>Total Stock:</strong> {formData.sizes.reduce((total, size) => total + (parseInt(size.stock) || 0), 0)} units</Typography>
+                    )}
                     <Typography><strong>Featured:</strong> {formData.featured ? 'Yes' : 'No'}</Typography>
                     <Typography><strong>Status:</strong> {formData.active ? 'Active' : 'Inactive'}</Typography>
                   </CardContent>
                 </Card>
               </Grid>
+
+              {formData.hasSizes && formData.sizes.length > 0 && (
+                <Grid item xs={12}>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Typography variant="subtitle1" gutterBottom>
+                        Size Variations ({formData.sizes.length})
+                      </Typography>
+                      <Grid container spacing={1}>
+                        {formData.sizes.map((size, index) => (
+                          <Grid item xs={12} sm={6} md={4} key={index}>
+                            <Paper sx={{ p: 2 }}>
+                              <Typography variant="subtitle2">{size.size}</Typography>
+                              <Typography variant="body2">Stock: {size.stock}</Typography>
+                              <Typography variant="body2">
+                                Price: £{(parseFloat(formData.price) + (parseFloat(size.priceAdjustment) || 0)).toFixed(2)}
+                                {size.priceAdjustment && ` (${parseFloat(size.priceAdjustment) > 0 ? '+' : ''}${size.priceAdjustment})`}
+                              </Typography>
+                              {size.sku && <Typography variant="body2">SKU: {size.sku}</Typography>}
+                            </Paper>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              )}
 
               <Grid item xs={12}>
                 <Card variant="outlined">
