@@ -31,6 +31,7 @@ import {
   Badge,
   useTheme,
   useMediaQuery,
+  Stack,
 } from '@mui/material';
 import { Edit, Delete, Add, ShoppingBag, LocalShipping, CheckCircle, Person } from '@mui/icons-material';
 import { useRouter } from 'next/router';
@@ -112,6 +113,8 @@ function OrderTimeline({ order }) {
 
 function OrderCard({ order }) {
   const [expanded, setExpanded] = useState(false);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const getStatusColor = (status) => {
     const colors = {
@@ -137,7 +140,17 @@ function OrderCard({ order }) {
   };
 
   return (
-    <Card sx={{ mb: 3, borderRadius: 2, boxShadow: 2, '&:last-child': { mb: 0 } }}>
+    <Card sx={{ 
+      mb: 3, 
+      borderRadius: 3, 
+      boxShadow: 3, 
+      transition: 'all 0.3s ease-in-out',
+      '&:hover': {
+        boxShadow: 6,
+        transform: 'translateY(-2px)',
+      },
+      '&:last-child': { mb: 0 } 
+    }}>
       <CardContent sx={{ p: 3 }}>
         <Grid container spacing={3} alignItems="flex-start">
           <Grid item xs={12} md={8}>
@@ -214,72 +227,110 @@ function OrderCard({ order }) {
 
         {expanded && (
           <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
-            <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ mb: 2 }}>
+            <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mb: 3 }}>
               Order Details
             </Typography>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Card variant="outlined" sx={{ borderRadius: 2 }}>
-                  <CardContent>
-                    <Typography variant="body2" fontWeight="bold" color="text.secondary" gutterBottom>
-                      Shipping Address
-                    </Typography>
-                    <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                      {order.shippingAddress?.name}<br />
-                      {order.shippingAddress?.line1}<br />
-                      {order.shippingAddress?.line2 && <>{order.shippingAddress.line2}<br /></>}
-                      {order.shippingAddress?.city}, {order.shippingAddress?.county}<br />
-                      {order.shippingAddress?.postcode}<br />
-                      {order.shippingAddress?.country}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Card variant="outlined" sx={{ borderRadius: 2 }}>
-                  <CardContent>
-                    <Typography variant="body2" fontWeight="bold" color="text.secondary" gutterBottom>
-                      Order Items
-                    </Typography>
-                    <Box sx={{ maxHeight: '200px', overflow: 'auto' }}>
-                      {order.items.map((item, index) => (
-                        <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, pb: 1, borderBottom: index < order.items.length - 1 ? 1 : 0, borderColor: 'divider' }}>
-                          <Box>
-                            <Typography variant="body2" fontWeight="medium">
-                              {item.product.name}
-                            </Typography>
+            
+            <Stack 
+              direction={isMobile ? "column" : "row"} 
+              spacing={3}
+              sx={{ width: '100%' }}
+            >
+              {/* Shipping Address */}
+              <Card 
+                variant="outlined" 
+                sx={{ 
+                  borderRadius: 2,
+                  flex: 1,
+                  minWidth: isMobile ? '100%' : '300px'
+                }}
+              >
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary" gutterBottom>
+                    Shipping Address
+                  </Typography>
+                  <Typography variant="body2" sx={{ lineHeight: 1.8 }}>
+                    {order.shippingAddress?.name}<br />
+                    {order.shippingAddress?.line1}<br />
+                    {order.shippingAddress?.line2 && <>{order.shippingAddress.line2}<br /></>}
+                    {order.shippingAddress?.city}, {order.shippingAddress?.county}<br />
+                    {order.shippingAddress?.postcode}<br />
+                    {order.shippingAddress?.country}
+                  </Typography>
+                </CardContent>
+              </Card>
+
+              {/* Order Items */}
+              <Card 
+                variant="outlined" 
+                sx={{ 
+                  borderRadius: 2,
+                  flex: 1,
+                  minWidth: isMobile ? '100%' : '400px'
+                }}
+              >
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary" gutterBottom>
+                    Order Items
+                  </Typography>
+                  <Box sx={{ maxHeight: '280px', overflow: 'auto', pr: 1 }}>
+                    {order.items.map((item, index) => (
+                      <Box 
+                        key={index} 
+                        sx={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          mb: 2, 
+                          pb: 2, 
+                          borderBottom: index < order.items.length - 1 ? 1 : 0, 
+                          borderColor: 'divider' 
+                        }}
+                      >
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body1" fontWeight="medium" gutterBottom>
+                            {item.product.name}
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                             <Typography variant="caption" color="text.secondary">
                               Qty: {item.quantity}
                             </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              £{item.product.price.toFixed(2)} each
+                            </Typography>
                           </Box>
-                          <Typography variant="body2" fontWeight="bold">
-                            £{(item.product.price * item.quantity).toFixed(2)}
-                          </Typography>
                         </Box>
-                      ))}
-                    </Box>
-                    <Divider sx={{ my: 1.5 }} />
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body2" fontWeight="bold">
-                        Total
-                      </Typography>
-                      <Typography variant="body2" fontWeight="bold" color="primary">
-                        £{order.total.toFixed(2)}
-                      </Typography>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
+                        <Typography variant="body1" fontWeight="bold" color="primary">
+                          £{(item.product.price * item.quantity).toFixed(2)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                  <Divider sx={{ my: 2 }} />
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="h6" fontWeight="bold">
+                      Total Amount
+                    </Typography>
+                    <Typography variant="h6" fontWeight="bold" color="primary">
+                      £{order.total.toFixed(2)}
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Stack>
           </Box>
         )}
 
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
           <Button
             variant="outlined"
-            size="small"
+            size="medium"
             onClick={() => setExpanded(!expanded)}
-            sx={{ borderRadius: 2 }}
+            sx={{ 
+              borderRadius: 2,
+              px: 3,
+              fontWeight: 'bold'
+            }}
           >
             {expanded ? 'Show Less' : 'View Full Details'}
           </Button>
@@ -461,7 +512,13 @@ export default function Profile() {
 
         {/* Identity Card - Personal Info */}
         {tabValue === 0 && (
-          <Card sx={{ mb: 4, borderRadius: 3, boxShadow: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+          <Card sx={{ 
+            mb: 4, 
+            borderRadius: 3, 
+            boxShadow: 3, 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+            color: 'white' 
+          }}>
             <CardContent sx={{ p: 4 }}>
               <Grid container spacing={3} alignItems="center">
                 <Grid item xs={12} md={3} sx={{ display: 'flex', justifyContent: 'center' }}>

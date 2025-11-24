@@ -384,24 +384,26 @@ const handleSubmit = async (e) => {
     const uploadedImages = await uploadImagesToServer(formData.images);
     console.log('Images uploaded:', uploadedImages.length);
 
-    // Prepare the data to send
-    const submitData = {
-      name: formData.name.trim(),
-      description: formData.description.trim(),
-      price: parseFloat(formData.price),
-      category: formData.category,
-      stock: formData.hasSizes ? 0 : parseInt(formData.stock) || 0, // Set to 0 for sized products
-      featured: Boolean(formData.featured),
-      active: Boolean(formData.active),
-      images: uploadedImages,
-      hasSizes: Boolean(formData.hasSizes),
-      sizes: formData.hasSizes ? formData.sizes.map(size => ({
-        size: size.size.trim(),
-        stock: parseInt(size.stock) || 0,
-        priceAdjustment: parseFloat(size.priceAdjustment) || 0,
-        sku: size.sku?.trim() || ''
-      })) : [],
-    };
+   // Prepare the data to send
+const submitData = {
+  name: formData.name.trim(),
+  description: formData.description.trim(),
+  price: parseFloat(formData.price),
+  category: formData.category,
+  stock: formData.hasSizes 
+    ? formData.sizes.reduce((total, size) => total + (parseInt(size.stock) || 0), 0)
+    : parseInt(formData.stock) || 0,
+  featured: Boolean(formData.featured),
+  active: Boolean(formData.active),
+  images: uploadedImages,
+  hasSizes: Boolean(formData.hasSizes),
+  sizes: formData.hasSizes ? formData.sizes.map(size => ({
+    size: size.size.trim(),
+    stock: parseInt(size.stock) || 0,
+    priceAdjustment: parseFloat(size.priceAdjustment) || 0,
+    sku: size.sku?.trim() || ''
+  })) : [],
+};
 
     console.log('Submitting data:', submitData);
 
